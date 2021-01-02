@@ -22,6 +22,7 @@ namespace Avatara
         public FiguredataReader FiguredataReader;
         public string Action; // stand
         public string Gesture;
+        public int CarryItem;
         public int Frame;
 
         public Image<Rgba32> BodyCanvas;
@@ -31,7 +32,7 @@ namespace Avatara
         public int CANVAS_WIDTH = 64;
         public bool RenderHead;
 
-        public Avatar(string figure, bool isSmall, int bodyDirection, int headDirection, FiguredataReader figuredataReader, string action = "std", string gesture = "sml", bool headOnly = false, int frame = 1)
+        public Avatar(string figure, bool isSmall, int bodyDirection, int headDirection, FiguredataReader figuredataReader, string action = "std", string gesture = "sml", bool headOnly = false, int frame = 1, int carryItem = 0)
         {
             Figure = figure;
             IsSmall = isSmall;
@@ -39,6 +40,7 @@ namespace Avatara
             HeadDirection = headDirection;
             FiguredataReader = figuredataReader;
             RenderHead = headOnly;
+            CarryItem = carryItem;
 
             if (isSmall)
             {
@@ -69,8 +71,6 @@ namespace Avatara
             BodyCanvas = new Image<Rgba32>(CANVAS_WIDTH, CANVAS_HEIGHT, HexToColor("transparent"));
             FaceCanvas = new Image<Rgba32>(CANVAS_WIDTH, CANVAS_HEIGHT, HexToColor("transparent"));
             Frame = frame - 1;
-
-            LoadCarryItemAsset(3);
         }
 
         public byte[] Run()
@@ -81,6 +81,121 @@ namespace Avatara
                 return null;
 
             return DrawImage(buildQueue);
+        }
+
+        public List<AvatarAsset> TakeCareOfHats(FigureDataPiece sprite, OldFigureColor color)
+        {
+            var extraAssets = new List<AvatarAsset>();
+            var extra = "";
+
+            Dictionary<string, string> figureData = new Dictionary<string, string>();
+
+            switch (sprite.Sprite.Id)
+            {
+                // REggae
+                case "120":
+                    extra = "hr-676-61.ha-1001-0.fa-1201-62";
+                    break;
+                // Cap
+                case "525":
+                case "140":
+                    extra = "ha-1002-" + 0;
+                    break;
+                // Comfy beanie
+                case "150":
+                case "535":
+                    extra = "ha-1003-" + 0;
+                    break;
+                //Fishing hat
+                case "160":
+                case "565":
+                    extra = "ha-1004-" + 0;
+                    break;
+                // Bandana
+                case "570":
+                    extra = "ha-1005-" + 0;
+                    break;
+                // Xmas beanie
+                case "585":
+                case "175":
+                    extra = "ha-1006-0";
+                    break;
+                // Xmas rodolph
+                case "580":
+                case "176":
+                    extra = "ha-1007-0.fa-1202-1412";
+                    break;
+                // Bunny
+                case "590":
+                case "177":
+                    extra = "ha-1008-0.fa-1202-1327";
+                    break;
+                // Hard Hat
+                case "178":
+                    extra = "ha-1009-1321";
+                    break;
+                // Boring beanie
+                case "595":
+                    extra = "ha-1010-" + 0;
+                    break;
+                // HC Beard hat
+                case "801":
+                    extra = "hr-829-" + 0 + ".fa-1201-62.ha-1011-" + 0;
+                    break;
+
+                // HC Beanie
+                case "800":
+                case "810":
+                    extra = "ha-1012-" + 0;
+                    break;
+                // HC Cowboy Hat
+                case "802":
+                case "811":
+                    extra = "ha-1013-" + 0;
+                    break;
+
+            }
+            if(extra.Length > 0)
+            {
+                extra += ".";
+            }
+            foreach (string data in extra.Split("."))
+            {
+                string[] parts = data.Split("-");
+                figureData.Add(parts[0], string.Join("-", parts));
+
+            }
+
+            var assetLast = new List<AvatarAsset>();
+
+            foreach (string data in figureData.Values)
+            {
+                string[] parts = data.Split("-");
+
+                if (parts.Length < 2 || parts.Length > 3)
+                {
+                    break;
+                }
+
+                var setList = FiguredataReader.FigureSets.Values.Where(x => x.Id == parts[1]);
+
+                foreach (var set in setList)
+                {
+                    var partList = set.FigureParts;
+
+                    foreach (var part in partList)
+                    {
+                        part.hexColor = color.HexColor;
+                        var t = LoadFigureAsset(parts, part, set);
+
+                        if (t == null)
+                            continue;
+
+                        extraAssets.Add(t);
+                    }
+                }
+            }
+            return extraAssets;
         }
 
         private byte[] DrawImage(List<AvatarAsset> buildQueue)
@@ -104,26 +219,32 @@ namespace Avatara
                             if (asset.Part.Colorable)
                             {
                                 string[] parts = asset.Parts;
-
-                                if (parts.Length > 2)
+                                if(asset.Part.hexColor != null)
                                 {
-                                    var paletteId = int.Parse(parts[2]);
-
-                                    if (!FiguredataReader.FigureSetTypes.ContainsKey(parts[0]))
-                                        continue;
-
-                                    var figureTypeSet = FiguredataReader.FigureSetTypes[parts[0]];
-                                    var palette = FiguredataReader.FigurePalettes[figureTypeSet.PaletteId];
-                                    var colourData = palette.FirstOrDefault(x => x.ColourId == parts[2]);
-
-                                    if (colourData == null)
+                                    TintImage(image, asset.Part.hexColor, 255);
+                                } else
+                                {
+                                    if (parts.Length > 2)
                                     {
-                                        continue;
+                                        var paletteId = int.Parse(parts[2]);
+
+                                        if (!FiguredataReader.FigureSetTypes.ContainsKey(parts[0]))
+                                            continue;
+
+                                        var figureTypeSet = FiguredataReader.FigureSetTypes[parts[0]];
+                                        var palette = FiguredataReader.FigurePalettes[figureTypeSet.PaletteId];
+                                        var colourData = palette.FirstOrDefault(x => x.ColourId == parts[2]);
+
+                                        if (colourData == null)
+                                        {
+                                            continue;
+                                        }
+
+                                        TintImage(image, colourData.HexColor, 255);
+
                                     }
-
-                                    TintImage(image, colourData.HexColor, 255);
-
                                 }
+                                
                             }
                         }
                         else
@@ -209,56 +330,111 @@ namespace Avatara
         private List<AvatarAsset> BuildDrawQueue()
         {
             List<AvatarAsset> queue = new List<AvatarAsset>();
-            Dictionary<string, string> figureData = new Dictionary<string, string>();
 
 
-            foreach (string data in Figure.Split("."))
+            if (this.CarryItem > 0 && Action != "lay")
             {
-                string[] parts = data.Split("-");
-                figureData.Add(parts[0], string.Join("-", parts));
-
+                queue.Add(LoadCarryItemAsset(this.CarryItem));
             }
 
-            var assetLast = new List<AvatarAsset>();
-
-            foreach (string data in figureData.Values)
+            if (FiguredataReader.FigurePieces.Count() > 0)
             {
-                string[] parts = data.Split("-");
+                var figureSpriteAndColor = new List<string>();
 
-                if (parts.Length < 2 || parts.Length > 3)
+                for (var i = 0; i < 5; i++)
                 {
-                    return null;
+                    var part = Figure.Substring(i * 5, 5);
+                    figureSpriteAndColor.Add(part);
                 }
 
-                var setList = FiguredataReader.FigureSets.Values.Where(x => x.Id == parts[1]);
-
-                foreach (var set in setList)
+                foreach (string data in figureSpriteAndColor)
                 {
-                    var partList = set.FigureParts;
-
-                    foreach (var part in partList)
+                    var sprite = FiguredataReader.FigurePieces.Where(s => s.Sprite.Id == data.Substring(0, 3).TrimStart(new char[] { '0' })).First();
+                    var color = sprite.Colors.Where(s => s.ColorId == data.Substring(3, 2).TrimStart(new char[] { '0' })).First();
+                    
+                    var test = new string[] { };
+                    foreach(OldFigurePart part in sprite.Sprite.FigureParts)
                     {
-                        var t = LoadFigureAsset(parts, part, set);
+                        List<AvatarAsset> hat = TakeCareOfHats(sprite, color);
+                        if(hat != null)
+                        {
+                            queue.AddRange(hat);
+                            Console.WriteLine(hat.Count());
+                        }
+                        var t = LoadFigureAsset(test, new FigurePart(part.Value, part.Type, true, 0, color.HexColor), new FigureSet(sprite.Sprite.SetType, sprite.Sprite.Id, sprite.Gender, false, true, true));
+                        if(t != null)
+                        {
+                           
+                            queue.Add(t);
+                            Console.WriteLine(t.FileName);
+                        }
+                    }
+                    
+                    
 
-                        if (t == null)
-                            continue;
 
-                        queue.Add(t);
+
+                }
+                var assetLast = new List<AvatarAsset>();
+                if(queue.Count > 0) 
+                    queue = queue.OrderBy(x => x.Part.OrderId).ToList();
+
+                queue.AddRange(assetLast);
+            } else
+            {
+                Dictionary<string, string> figureData = new Dictionary<string, string>();
+
+                foreach (string data in Figure.Split("."))
+                {
+                    string[] parts = data.Split("-");
+                    figureData.Add(parts[0], string.Join("-", parts));
+
+                }
+
+                var assetLast = new List<AvatarAsset>();
+
+                foreach (string data in figureData.Values)
+                {
+                    string[] parts = data.Split("-");
+
+                    if (parts.Length < 2 || parts.Length > 3)
+                    {
+                        return null;
+                    }
+
+                    var setList = FiguredataReader.FigureSets.Values.Where(x => x.Id == parts[1]);
+
+                    foreach (var set in setList)
+                    {
+                        var partList = set.FigureParts;
+
+                        foreach (var part in partList)
+                        {
+                            var t = LoadFigureAsset(parts, part, set);
+
+                            if (t == null)
+                                continue;
+
+                            queue.Add(t);
+                        }
                     }
                 }
+
+                /*
+                var carryItemAsset = this.LoadCarryItemAsset(62);
+
+                if (carryItemAsset != null)
+                {
+                    queue.Add(carryItemAsset);
+                }
+                */
+                if(queue.Count > 0) 
+                    queue = queue.OrderBy(x => x.Part.OrderId).ToList();
+
+                queue.AddRange(assetLast);
             }
 
-            /*
-            var carryItemAsset = this.LoadCarryItemAsset(62);
-
-            if (carryItemAsset != null)
-            {
-                queue.Add(carryItemAsset);
-            }
-            */
-
-            queue = queue.OrderBy(x => x.Part.OrderId).ToList();
-            queue.AddRange(assetLast);
+            
             return queue;
         }
 
@@ -281,12 +457,14 @@ namespace Avatara
             if (BodyDirection == 5)
                 direction = 1;
 
-            var part = new FigurePart("0", "ri", false, 0);
+            var part = new FigurePart("0", "ri", false, 0, null);
             var set = new FigureSet("ri", "", "", false, false, false);
 
             var asset = LocateAsset((this.IsSmall ? "sh" : "h") + "_" + Action + "_ri_" + carryId + "_" + direction + "_" + Frame, document, null, part, set);
         
-        
+            if(asset == null)
+                asset = LocateAsset((this.IsSmall ? "sh" : "h") + "_crr_ri_" + carryId + "_" + direction + "_" + Frame, document, null, part, set);
+
             if (asset == null)
                 LocateAsset((this.IsSmall ? "sh" : "h") + "_std_ri_" + carryId + "_0_" + Frame, document, null, part, set);
 
@@ -335,14 +513,19 @@ namespace Avatara
 
             if (Action == "lay")
             {
-                if (BodyDirection == 4)
+                if (BodyDirection >= 4)
                     direction = 2;
             }
 
-
-            if (Action == "crr" && part.Type == "lh")
+            if (this.CarryItem > 0 && Action != "lay" && Action != "drk")
             {
-                gesture  ="std";
+                var partsForAction = new string[] { "rs", "rh" };
+                if(partsForAction.Contains(part.Type))
+                {
+                    gesture = "crr";
+                }
+                
+                
             }
 
             var asset = LocateAsset((this.IsSmall ? "sh" : "h") + "_" + gesture + "_" + part.Type + "_" + part.Id + "_" + direction + "_" + Frame, document, parts, part, set);

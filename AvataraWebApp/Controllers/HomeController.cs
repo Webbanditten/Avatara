@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace AvataraWebApp.Controllers
@@ -23,8 +24,15 @@ namespace AvataraWebApp.Controllers
 
         public IActionResult Index()
         {
+            string figure = "";
+            if (Request.Query.ContainsKey("figure"))
+            {
+                Request.Query.TryGetValue("figure", out var value);
+                figure = value.ToString();
+            }
             if (figuredataReader == null)
             {
+
                 FigureExtractor.Parse();
 
                 figuredataReader = new FiguredataReader();
@@ -33,20 +41,21 @@ namespace AvataraWebApp.Controllers
                 figuredataReader.LoadFigureSets();
             }
 
+            if (Regex.IsMatch(figure, @"^\d+$"))
+            {
+                figuredataReader.LoadOldFigureData();
+            }
+
             bool isSmall = false;
             int bodyDirection = 0;
             int headDirection = 0;
-            string figure = null;
+            
             string action = "std";
             string gesture = "sml";
             bool headOnly = false;
             int frame = 1;
 
-            if (Request.Query.ContainsKey("figure"))
-            {
-                Request.Query.TryGetValue("figure", out var value);
-                figure = value.ToString();
-            }
+           
 
             if (Request.Query.ContainsKey("action"))
             {

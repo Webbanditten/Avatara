@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Newtonsoft.Json.Linq;
 
 namespace Avatara.Figure
 {
@@ -12,13 +13,56 @@ namespace Avatara.Figure
         public Dictionary<int, List<FigureColor>> FigurePalettes;
         public Dictionary<string, FigureSetType> FigureSetTypes;
         public Dictionary<string, FigureSet> FigureSets;
+        public List<FigureDataPiece> FigurePieces;
 
         public FiguredataReader()
         {
             this.FigurePalettes = new Dictionary<int, List<FigureColor>>();
             this.FigureSetTypes = new Dictionary<string, FigureSetType> ();
             this.FigureSets = new Dictionary<string, FigureSet>();
+            this.FigurePieces = new List<FigureDataPiece>();
+        }
 
+        public void LoadOldFigureData()
+        {
+            var json = FileUtil.SolveJsonFile("oldfiguredata");
+            foreach (var genderDefinition in json["colors"])
+            {
+                JProperty genderDefinitionProps = genderDefinition.ToObject<JProperty>();
+
+                // Gendername
+                string genderName = genderDefinitionProps.Name;
+                foreach (var pieceDefiniton in genderDefinition.First().Children().Children())
+                {
+                    JProperty pieceDefinitionProps = pieceDefiniton.ToObject<JProperty>();
+
+                    // Partname
+                    string pieceName = pieceDefinitionProps.Name;
+
+                    // Iterate sprites 
+                    foreach (var spriteDefintion in pieceDefiniton.Children().Children())
+                    {
+                        var colors = new List<OldFigureColor>();
+                        var parts = new List<OldFigurePart>();
+
+                        var sprite = spriteDefintion.First();
+                        var spriteId = sprite["s"].ToString();
+                        JToken[] colorArray = sprite["c"].Children().ToArray();
+                        for (var i = 0; i < colorArray.Length; i++)
+                        {
+                            colors.Add(new OldFigureColor((i + 1).ToString(), colorArray[i].ToString()));
+                        }
+
+                        JToken[] partsArray = sprite["p"].Children().Children().ToArray();
+                        for (var i = 0; i < partsArray.Length; i++)
+                        {
+                            JProperty partDetails = partsArray[i].ToObject<JProperty>();
+                            parts.Add(new OldFigurePart(spriteId, partDetails.Name, i, partDetails.Value.ToString()));
+                        }
+                        FigurePieces.Add(new FigureDataPiece(new FigureSprite(pieceName, spriteId, genderName, parts.ToArray()), colors.ToArray(), genderName));
+                    }
+                }
+            }
         }
 
         public void LoadFigureSets()
@@ -52,7 +96,7 @@ namespace Avatara.Figure
                             part.Attributes.GetNamedItem("id").InnerText,
                             part.Attributes.GetNamedItem("type").InnerText,
                             part.Attributes.GetNamedItem("colorable").InnerText == "1",
-                            int.Parse(part.Attributes.GetNamedItem("index").InnerText)));
+                            int.Parse(part.Attributes.GetNamedItem("index").InnerText), null));
                 }
 
 

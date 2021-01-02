@@ -2,7 +2,7 @@
 
 namespace Avatara
 {
-    internal class AvatarAsset
+    public class AvatarAsset
     {
         public string Name;
         public int X;

@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Newtonsoft.Json.Linq;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -10,6 +11,22 @@ namespace Avatara.Util
 {
     public class FileUtil
     {
+        public static JObject SolveJsonFile(string outputDirectory, string fileNameContains = null)
+        {
+            if (fileNameContains == null)
+                fileNameContains = outputDirectory;
+
+            foreach (var file in Directory.GetFiles(outputDirectory, "*"))
+            {
+                if (Path.GetFileNameWithoutExtension(file).Contains(fileNameContains))
+                {
+
+                    JObject data = JObject.Parse(File.ReadAllText(file));
+                    return data;
+                }
+            }
+            return null;
+        }
         public static XmlDocument SolveXmlFile(string outputDirectory, string fileNameContains = null)
         {
             if (fileNameContains == null)

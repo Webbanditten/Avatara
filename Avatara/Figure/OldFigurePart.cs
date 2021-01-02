@@ -2,23 +2,21 @@
 
 namespace Avatara.Figure
 {
-    public class FigurePart
+    public class OldFigurePart
     {
-        public string Id;
+        public string Sprite;
         public string Type;
-        public bool Colorable;
         public int Index;
         public int OrderId;
-        public string hexColor;
+        public string Value;
 
-        public FigurePart(string id, string type, bool colorable, int index, string hexColor)
+        public OldFigurePart(string sprite, string type, int index, string value)
         {
-            this.Id = id;
+            this.Sprite = sprite;
             this.Type = type;
-            this.Colorable = colorable;
             this.Index = index;
+            this.Value = value;
             this.OrderId = GetOrder();
-            this.hexColor = hexColor;
 
         }
 
@@ -59,7 +57,7 @@ namespace Avatara.Figure
                 case "lh":
                     return 5;
                 case "ls":
-                    return 7;
+                    return 6;
                 case "rh":
                     return 10;
                 case "rs":
