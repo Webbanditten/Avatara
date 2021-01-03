@@ -9,7 +9,7 @@ namespace Avatara.Figure
         public bool Colorable;
         public int Index;
         public int OrderId;
-        public string hexColor;
+        public string HexColor;
 
         public FigurePart(string id, string type, bool colorable, int index, string hexColor)
         {
@@ -18,7 +18,7 @@ namespace Avatara.Figure
             this.Colorable = colorable;
             this.Index = index;
             this.OrderId = GetOrder();
-            this.hexColor = hexColor;
+            this.HexColor = hexColor;
 
         }
 
