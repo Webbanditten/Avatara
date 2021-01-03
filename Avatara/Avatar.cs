@@ -8,8 +8,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.Text.RegularExpressions;
 
 namespace Avatara
 {
@@ -24,23 +23,25 @@ namespace Avatara
         public string Gesture;
         public int CarryItem;
         public int Frame;
+        public int CarryDrink;
 
         public Image<Rgba32> BodyCanvas;
         public Image<Rgba32> FaceCanvas;
+        public Image<Rgba32> DrinkCanvas;
 
         public int CANVAS_HEIGHT = 110;
         public int CANVAS_WIDTH = 64;
-        public bool RenderHead;
+        public bool RenderEntireFigure;
+        public bool IsOldFigure;
 
-        public Avatar(string figure, bool isSmall, int bodyDirection, int headDirection, FiguredataReader figuredataReader, string action = "std", string gesture = "sml", bool headOnly = false, int frame = 1, int carryItem = 0)
-        {
+        public Avatar(string figure, bool isSmall, int bodyDirection, int headDirection, FiguredataReader figuredataReader, string action = "std", string gesture = "sml", bool headOnly = false, int frame = 1, int carryDrink = -1) { 
             Figure = figure;
             IsSmall = isSmall;
             BodyDirection = bodyDirection;
             HeadDirection = headDirection;
             FiguredataReader = figuredataReader;
-            RenderHead = headOnly;
-            CarryItem = carryItem;
+            RenderEntireFigure = !headOnly;
+            IsOldFigure = Figure.Length == 25 && Regex.IsMatch(Figure, @"^\d+$");
 
             if (isSmall)
             {
@@ -70,7 +71,10 @@ namespace Avatara
 
             BodyCanvas = new Image<Rgba32>(CANVAS_WIDTH, CANVAS_HEIGHT, HexToColor("transparent"));
             FaceCanvas = new Image<Rgba32>(CANVAS_WIDTH, CANVAS_HEIGHT, HexToColor("transparent"));
+            DrinkCanvas = new Image<Rgba32>(CANVAS_WIDTH, CANVAS_HEIGHT, HexToColor("transparent"));
+
             Frame = frame - 1;
+            CarryDrink = Action != "lay" ? carryDrink : 0;
         }
 
         public byte[] Run()
@@ -185,7 +189,7 @@ namespace Avatara
 
                     foreach (var part in partList)
                     {
-                        part.hexColor = color.HexColor;
+                        part.HexColor = color.HexColor;
                         var t = LoadFigureAsset(parts, part, set);
 
                         if (t == null)
@@ -200,125 +204,158 @@ namespace Avatara
 
         private byte[] DrawImage(List<AvatarAsset> buildQueue)
         {
+            using (var faceCanvas = this.FaceCanvas)
+            using (var bodyCanvas = this.BodyCanvas)
+            using (var drinkCanvas = this.DrinkCanvas)
+            {
+                foreach (var asset in buildQueue)
+                {
+                    // Don't render anything BUT the head if we chose head only
+                    if (!RenderEntireFigure && !IsHead(asset.Part.Type))
+                        continue;
+
+                    DrawAsset(buildQueue, BodyCanvas, FaceCanvas, DrinkCanvas, asset);
+                }
+
+
+                // Flip the head if necessary
+                if (HeadDirection == 4 || HeadDirection == 6 || HeadDirection == 5)
+                {
+                    FaceCanvas.Mutate(ctx =>
+                    {
+                        ctx.Flip(FlipMode.Horizontal);
+                    });
+                }
+
+                // Flip the body if necessary
+                if (BodyDirection == 4 || BodyDirection == 6 || BodyDirection == 5)
+                {
+                    BodyCanvas.Mutate(ctx =>
+                    {
+                        ctx.Flip(FlipMode.Horizontal);
+                    });
+
+                    DrinkCanvas.Mutate(ctx =>
+                    {
+                        ctx.Flip(FlipMode.Horizontal);
+                    });
+                }
+
+                // Draw head on body
+                BodyCanvas.Mutate(ctx =>
+                {
+                    ctx.DrawImage(FaceCanvas, 1f);
+                });
+
+                // Draw drink animation on body
+                BodyCanvas.Mutate(ctx =>
+                {
+                    ctx.DrawImage(DrinkCanvas, 1f);
+                });
+
+                Image<Rgba32> finalCanvas = null;
+
+                if (RenderEntireFigure)
+                {
+                    finalCanvas = this.BodyCanvas;
+                }
+                else
+                {
+                    finalCanvas = this.FaceCanvas;
+                }
+
+                using (Bitmap tempBitmap = finalCanvas.ToBitmap())
+                {
+                    if (!RenderEntireFigure)
+                    {
+                        using (var bitmap = ImageUtil.TrimBitmap(tempBitmap))
+                        {
+                            return RenderImage(bitmap);
+                        }
+                    }
+                    else
+                    {
+                        // Crop the image
+                        return RenderImage(tempBitmap);
+                    }
+                }
+            }
+        }
+
+        private void DrawAsset(List<AvatarAsset> buildQueue, Image<Rgba32> bodyCanvas, Image<Rgba32> faceCanvas, Image<Rgba32> drinkCanvas, AvatarAsset asset)
+        {
             var graphicsOptions = new GraphicsOptions();
             graphicsOptions.ColorBlendingMode = PixelColorBlendingMode.Normal;
 
-            using (var bodyCanvas = this.BodyCanvas)
+            using (var image = SixLabors.ImageSharp.Image.Load<Rgba32>(asset.FileName))
             {
-                using (var faceCanvas = this.FaceCanvas)
+                if (buildQueue.Count(x => x.Set.HiddenLayers.Contains(asset.Part.Type)) > 0)
+                    return;
+
+                if (asset.Part.Type != "ey")
                 {
-                    foreach (var asset in buildQueue)
+                    if (asset.Part.HexColor != null)
                     {
-                        var image = SixLabors.ImageSharp.Image.Load<Rgba32>(asset.FileName);
-
-                        if (buildQueue.Count(x => x.Set.HiddenLayers.Contains(asset.Part.Type)) > 0)
-                            continue;
-
-                        if (asset.Part.Type != "ey")
-                        {
-                            if (asset.Part.Colorable)
-                            {
-                                string[] parts = asset.Parts;
-                                if(asset.Part.hexColor != null)
-                                {
-                                    TintImage(image, asset.Part.hexColor, 255);
-                                } else
-                                {
-                                    if (parts.Length > 2)
-                                    {
-                                        var paletteId = int.Parse(parts[2]);
-
-                                        if (!FiguredataReader.FigureSetTypes.ContainsKey(parts[0]))
-                                            continue;
-
-                                        var figureTypeSet = FiguredataReader.FigureSetTypes[parts[0]];
-                                        var palette = FiguredataReader.FigurePalettes[figureTypeSet.PaletteId];
-                                        var colourData = palette.FirstOrDefault(x => x.ColourId == parts[2]);
-
-                                        if (colourData == null)
-                                        {
-                                            continue;
-                                        }
-
-                                        TintImage(image, colourData.HexColor, 255);
-
-                                    }
-                                }
-                                
-                            }
-                        }
-                        else
-                        {
-                            TintImage(image, "FFFFFF", 255);
-                        }
-
-                        try
-                        {
-                            if (this.IsHead(asset.Part.Type))
-                            {
-                                faceCanvas.Mutate(ctx =>
-                                {
-                                    ctx.DrawImage(image, new SixLabors.ImageSharp.Point(faceCanvas.Width - asset.ImageX, faceCanvas.Height - asset.ImageY), graphicsOptions);
-                                });
-                            }
-                            else
-                            {
-                                bodyCanvas.Mutate(ctx =>
-                                {
-                                    ctx.DrawImage(image, new SixLabors.ImageSharp.Point(bodyCanvas.Width - asset.ImageX, bodyCanvas.Height - asset.ImageY), graphicsOptions);
-                                });
-                            }
-                        }
-                        catch { }
+                        TintImage(image, asset.Part.HexColor, 255);
                     }
-
-
-                    if (BodyDirection == 4 || BodyDirection == 6 || BodyDirection == 5)
+                    if (asset.Part.Colorable)
                     {
-                        bodyCanvas.Mutate(ctx =>
-                        {
-                            ctx.Flip(FlipMode.Horizontal);
-                        });
-                    }
+                        string[] parts = asset.Parts;
 
-                    if (HeadDirection == 4 || HeadDirection == 6 || HeadDirection == 5)
+                        if (parts.Length > 2 && !IsOldFigure)
+                        {
+                            var paletteId = int.Parse(parts[2]);
+
+                            if (!FiguredataReader.FigureSetTypes.ContainsKey(parts[0]))
+                                return;
+
+                            var figureTypeSet = FiguredataReader.FigureSetTypes[parts[0]];
+                            var palette = FiguredataReader.FigurePalettes[figureTypeSet.PaletteId];
+                            var colourData = palette.FirstOrDefault(x => x.ColourId == parts[2]);
+
+                            if (colourData == null)
+                            {
+                                return;
+                            }
+
+                            TintImage(image, colourData.HexColor, 255);
+
+                        }
+                    }
+                }
+                else
+                {
+                    TintImage(image, "FFFFFF", 255);
+                }
+
+                try
+                {
+                    if (this.IsHead(asset.Part.Type))
                     {
                         faceCanvas.Mutate(ctx =>
                         {
-                            ctx.Flip(FlipMode.Horizontal);
-                        });
-                    }
-
-                    var theCanvas = bodyCanvas;
-
-                    if (!RenderHead)
-                    {
-                        bodyCanvas.Mutate(ctx =>
-                        {
-                            ctx.DrawImage(faceCanvas, 1f);
+                            ctx.DrawImage(image, new SixLabors.ImageSharp.Point(faceCanvas.Width - asset.ImageX, faceCanvas.Height - asset.ImageY), graphicsOptions);
                         });
                     }
                     else
                     {
-                        theCanvas = faceCanvas;
-                    }
-
-                    using (Bitmap tempBitmap = theCanvas.ToBitmap())
-                    {
-                        if (RenderHead)
+                        if (!asset.IsDrinkCanvas)
                         {
-                            using (var bitmap = ImageUtil.TrimBitmap(tempBitmap))
+                            bodyCanvas.Mutate(ctx =>
                             {
-                                return RenderImage(bitmap);
-                            }
+                                ctx.DrawImage(image, new SixLabors.ImageSharp.Point(bodyCanvas.Width - asset.ImageX, bodyCanvas.Height - asset.ImageY), graphicsOptions);
+                            });
                         }
                         else
                         {
-                            // Crop the image
-                            return RenderImage(tempBitmap);
+                            drinkCanvas.Mutate(ctx =>
+                            {
+                                ctx.DrawImage(image, new SixLabors.ImageSharp.Point(bodyCanvas.Width - asset.ImageX, bodyCanvas.Height - asset.ImageY), graphicsOptions);
+                            });
                         }
                     }
                 }
+                catch { }
             }
         }
 
@@ -329,15 +366,9 @@ namespace Avatara
 
         private List<AvatarAsset> BuildDrawQueue()
         {
-            List<AvatarAsset> queue = new List<AvatarAsset>();
+            List<AvatarAsset> tempQueue = new List<AvatarAsset>();
 
-
-            if (this.CarryItem > 0 && Action != "lay")
-            {
-                queue.Add(LoadCarryItemAsset(this.CarryItem));
-            }
-
-            if (FiguredataReader.FigurePieces.Count() > 0)
+            if(IsOldFigure && FiguredataReader.FigurePieces.Count > 0)
             {
                 var figureSpriteAndColor = new List<string>();
 
@@ -351,37 +382,33 @@ namespace Avatara
                 {
                     var sprite = FiguredataReader.FigurePieces.Where(s => s.Sprite.Id == data.Substring(0, 3).TrimStart(new char[] { '0' })).First();
                     var color = sprite.Colors.Where(s => s.ColorId == data.Substring(3, 2).TrimStart(new char[] { '0' })).First();
-                    
+
                     var test = new string[] { };
-                    foreach(OldFigurePart part in sprite.Sprite.FigureParts)
+                    foreach (OldFigurePart part in sprite.Sprite.FigureParts)
                     {
                         List<AvatarAsset> hat = TakeCareOfHats(sprite, color);
-                        if(hat != null)
+                        if (hat.Count > 0)
                         {
-                            queue.AddRange(hat);
+                            tempQueue.AddRange(hat);
                             Console.WriteLine(hat.Count());
                         }
                         var t = LoadFigureAsset(test, new FigurePart(part.Value, part.Type, true, 0, color.HexColor), new FigureSet(sprite.Sprite.SetType, sprite.Sprite.Id, sprite.Gender, false, true, true));
-                        if(t != null)
+                        if (t != null)
                         {
-                           
-                            queue.Add(t);
+
+                            tempQueue.Add(t);
                             Console.WriteLine(t.FileName);
                         }
                     }
-                    
-                    
+
+
 
 
 
                 }
-                var assetLast = new List<AvatarAsset>();
-                if(queue.Count > 0) 
-                    queue = queue.OrderBy(x => x.Part.OrderId).ToList();
-
-                queue.AddRange(assetLast);
             } else
             {
+
                 Dictionary<string, string> figureData = new Dictionary<string, string>();
 
                 foreach (string data in Figure.Split("."))
@@ -415,27 +442,61 @@ namespace Avatara
                             if (t == null)
                                 continue;
 
-                            queue.Add(t);
+                            tempQueue.Add(t);
                         }
                     }
                 }
 
-                /*
-                var carryItemAsset = this.LoadCarryItemAsset(62);
+                
+            }
+
+            // Find maxiumum head render order (used for drinks)
+            int headRenderOrder = tempQueue.Where(x => IsHead(x.Part.Type)).Max(x => x.RenderOrder);
+
+            // Render drink next
+            if (CarryDrink > 0)
+            {
+                var carryItemAsset = this.LoadCarryItemAsset(CarryDrink);
 
                 if (carryItemAsset != null)
                 {
-                    queue.Add(carryItemAsset);
-                }
-                */
-                if(queue.Count > 0) 
-                    queue = queue.OrderBy(x => x.Part.OrderId).ToList();
+                    // Remove drink drink canvas, hide behind face on these rotations
+                    if (BodyDirection == 1 || BodyDirection == 5 || BodyDirection == 0 || BodyDirection == 6)
+                    {
+                        carryItemAsset.IsDrinkCanvas = false; // Render on body instead of drink canvas
+                        carryItemAsset.RenderOrder = 0;
+                    }
+                    else
+                    {
+                        // Render drink one above the max render order of the head
+                        carryItemAsset.RenderOrder = headRenderOrder + 1;
+                        carryItemAsset.IsDrinkCanvas = true;
+                    }
 
-                queue.AddRange(assetLast);
+                    tempQueue.Add(carryItemAsset);
+
+                    // Move hands in front of drink
+                    if (Action == "drk")
+                    {
+                        foreach (var asset in tempQueue)
+                        {
+                            if (asset == carryItemAsset)
+                                continue;
+
+                            // Render arms and hands above the rest, including the item being carried
+                            if (asset.Parts.Contains("drk"))
+                            {
+                                asset.RenderOrder = 100;
+                                asset.IsDrinkCanvas = true;
+                            }
+                        }
+                    }
+                }
             }
 
-            
-            return queue;
+
+            tempQueue = tempQueue.OrderBy(x => x.RenderOrder).ToList();
+            return tempQueue;
         }
 
         private AvatarAsset LoadCarryItemAsset(int carryId)
@@ -461,8 +522,8 @@ namespace Avatara
             var set = new FigureSet("ri", "", "", false, false, false);
 
             var asset = LocateAsset((this.IsSmall ? "sh" : "h") + "_" + Action + "_ri_" + carryId + "_" + direction + "_" + Frame, document, null, part, set);
-        
-            if(asset == null)
+
+            if (asset == null)
                 asset = LocateAsset((this.IsSmall ? "sh" : "h") + "_crr_ri_" + carryId + "_" + direction + "_" + Frame, document, null, part, set);
 
             if (asset == null)
@@ -474,6 +535,7 @@ namespace Avatara
 
         private AvatarAsset LoadFigureAsset(string[] parts, FigurePart part, FigureSet set)
         {
+
             var key = part.Type + (IsSmall ? "_sh" : "_h");
             var document = FigureExtractor.Parts.ContainsKey(key) ? FigureExtractor.Parts[key] : null;
 
@@ -511,22 +573,33 @@ namespace Avatara
                     direction = 1;
             }
 
+            // Hide left arm on side view
+            if (direction == 1 && part.Type == "ls")
+                return null;
+
             if (Action == "lay")
             {
                 if (BodyDirection >= 4)
                     direction = 2;
             }
 
-            if (this.CarryItem > 0 && Action != "lay" && Action != "drk")
+            if (CarryDrink > 0 && Action != "lay" && Action != "drk")
             {
-                var partsForAction = new string[] { "rs", "rh" };
-                if(partsForAction.Contains(part.Type))
+
+                if (new string[] { "ls", "lh" }.Contains(part.Type))
                 {
-                    gesture = "crr";
+                    gesture = "std";
                 }
-                
-                
+                if (CarryDrink > 0)
+                {
+                    if (new string[] { "rs", "rh" }.Contains(part.Type))
+                    {
+                        gesture = "crr";
+                    }
+                }
             }
+
+
 
             var asset = LocateAsset((this.IsSmall ? "sh" : "h") + "_" + gesture + "_" + part.Type + "_" + part.Id + "_" + direction + "_" + Frame, document, parts, part, set);
 

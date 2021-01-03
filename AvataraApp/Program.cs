@@ -20,17 +20,14 @@ namespace AvataraApp
                 figuredataReader.LoadFigurePalettes();
                 figuredataReader.loadFigureSetTypes();
                 figuredataReader.LoadFigureSets();
+                figuredataReader.LoadOldFigureData();
 
                 //string figure = "hd-180-1.hr-100-.ch-260-62.lg-275-64.ha-1008-.ea-1402-.ca-1806-73";
-                string figure = "8004718501285022900280543";
-                if (Regex.IsMatch(figure, @"^\d+$"))
-                {
-                    figuredataReader.LoadOldFigureData();
-                }
+                string figure = "8024319001270152950823021";
                 Console.WriteLine("Parsing: " + figure);
-                var action = "wlk";
+                var action = "lay";
                 var gesture = "sml";
-                var item = 6;
+                var item = 2;
 
                 var avata = new Avatar(figure, false, 0, 0, figuredataReader, action, gesture, false, 1, item);
                 File.WriteAllBytes("figure0-0.png", avata.Run());
